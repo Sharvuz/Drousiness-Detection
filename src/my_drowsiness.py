@@ -10,17 +10,15 @@ import os
 # ==========================================
 pygame.mixer.init()
 
-# Tự động tìm đường dẫn đến file alarm.mp3 trong thư mục media
 current_dir = os.path.dirname(os.path.abspath(__file__))
 alarm_path = os.path.join(current_dir, "..", "media", "alarm.mp3")
 
-# Nạp file âm thanh vào bộ nhớ
 try:
     pygame.mixer.music.load(alarm_path)
-    print("Đã tải thành công file âm thanh!")
+    print("Da tai thanh cong file am thanh!")
 except Exception as e:
-    print(f"LỖI: Không tìm thấy file âm thanh tại {alarm_path}")
-    print("Vui lòng kiểm tra lại xem thư mục 'media' và file 'alarm.mp3' đã có chưa.")
+    print(f"LOI: Khong tim thay file am thanh tai {alarm_path}")
+    print("Vui long kiem tra lai thu muc 'media' va file 'alarm.mp3'.")
 
 
 # ==========================================
@@ -37,7 +35,7 @@ def eye_aspect_ratio(eye):
 # ==========================================
 # KHỐI 3: KHỞI TẠO MÔ HÌNH DLIB VÀ CAMERA
 # ==========================================
-print("Đang khởi động Camera và tải Model...")
+print("Dang khoi dong Camera va tai Model...")
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
 
@@ -47,11 +45,19 @@ predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
 cap = cv2.VideoCapture(0)
 
 # ==========================================
-# KHỐI 4: VÒNG LẶP XỬ LÝ (PIPELINE)
+# CẤU HÌNH NGƯỠNG BUỒN NGỦ
+# ==========================================
+EAR_THRESHOLD = 0.3
+CLOSED_EYE_LIMIT = 50
+closed_eye_counter = 0
+
+# ==========================================
+# KHỐI 4: VÒNG LẶP XỬ LÝ
 # ==========================================
 while True:
     ret, frame = cap.read()
-    if not ret: break
+    if not ret:
+        break
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     faces = detector(gray, 0)
@@ -65,19 +71,49 @@ while True:
 
         ear = (eye_aspect_ratio(leftEye) + eye_aspect_ratio(rightEye)) / 2.0
 
-        cv2.putText(frame, f"EAR: {ear:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+        cv2.putText(
+            frame,
+            f"EAR: {ear:.2f}",
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 0),
+            2
+        )
 
-        # --- LOGIC BÁO ĐỘNG NẰM Ở ĐÂY ---
-        if ear < 0.3:  # Nếu mắt nhắm
-            cv2.putText(frame, "BUON NGU!", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+        cv2.putText(
+            frame,
+            f"Dem mat nham: {closed_eye_counter}/{CLOSED_EYE_LIMIT}",
+            (10, 60),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 0),
+            2
+        )
 
-            # Kiểm tra xem nhạc có ĐANG PHÁT hay không. Nếu không thì mới bật.
-            if not pygame.mixer.music.get_busy():
-                pygame.mixer.music.play()
-        else:  # Nếu mắt mở lại
-            # Tắt báo động
+        # Nếu EAR nhỏ hơn 0.3 thì tính là mắt đang nhắm
+        if ear < EAR_THRESHOLD:
+            closed_eye_counter += 1
+
+            # Nếu mắt nhắm liên tục đủ 50 lần thì báo động
+            if closed_eye_counter >= CLOSED_EYE_LIMIT:
+                cv2.putText(
+                    frame,
+                    "BUON NGU!",
+                    (10, 100),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.9,
+                    (0, 0, 255),
+                    2
+                )
+
+                if not pygame.mixer.music.get_busy():
+                    pygame.mixer.music.play()
+
+        else:
+            # Nếu mắt mở lại thì reset bộ đếm và tắt báo động
+            closed_eye_counter = 0
             pygame.mixer.music.stop()
-        # --------------------------------
 
     cv2.imshow("He Thong Canh Bao Buon Ngu", frame)
 
