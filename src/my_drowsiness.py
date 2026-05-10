@@ -1,21 +1,42 @@
 import cv2
 import dlib
+
+# Dùng để tính khoảng cách giữa 2 điểm.
 from scipy.spatial import distance
+
+# Hỗ trợ xử lý landmark khuôn mặt dễ hơn.
+# đổi landmark sang numpy array.
 from imutils import face_utils
+
+# Dùng để phát âm thanh báo động.
 import pygame
+
+# Làm việc với đường dẫn file/thư mục.
 import os
+
 
 # ==========================================
 # KHỐI 1: CẤU HÌNH ÂM THANH BÁO ĐỘNG
 # ==========================================
+
+# Khởi tạo bộ phát âm thanh.
+# Nếu không có dòng này:
+# → không phát được nhạc.
 pygame.mixer.init()
 
+# __file__ → file python hiện tại
+# abspath → lấy đường dẫn đầy đủ
+# dirname → lấy thư mục chứa file
 current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Tạo đường dẫn tới file báo động.
 alarm_path = os.path.join(current_dir, "..", "media", "alarm.mp3")
 
 try:
+    # Tải file mp3 vào bộ nhớ.
     pygame.mixer.music.load(alarm_path)
     print("Da tai thanh cong file am thanh!")
+
 except Exception as e:
     print(f"LOI: Khong tim thay file am thanh tai {alarm_path}")
     print("Vui long kiem tra lai thu muc 'media' va file 'alarm.mp3'.")
@@ -24,65 +45,158 @@ except Exception as e:
 # ==========================================
 # KHỐI 2: HÀM TÍNH TOÁN EAR
 # ==========================================
+
+# Tạo hàm tính EAR
 def eye_aspect_ratio(eye):
+
+    # Khoảng cách dọc thứ 1
     A = distance.euclidean(eye[1], eye[5])
+
+    # Khoảng cách dọc thứ 2
     B = distance.euclidean(eye[2], eye[4])
+
+    # Khoảng cách ngang
     C = distance.euclidean(eye[0], eye[3])
+
+    # Công thức EAR
     ear = (A + B) / (2.0 * C)
+
     return ear
 
 
 # ==========================================
 # KHỐI 3: KHỞI TẠO MÔ HÌNH DLIB VÀ CAMERA
 # ==========================================
-print("Dang khoi dong Camera va tai Model...")
-detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
 
+print("Dang khoi dong Camera va tai Model...")
+
+# Model tìm khuôn mặt.
+# model được train sẵn trong dlib
+detector = dlib.get_frontal_face_detector()
+# Model nhận diện 68 điểm trên mặt.
+predictor = dlib.shape_predictor(
+    "shape_predictor_68_face_landmarks.dat"
+)
+
+#lấy trong thư viện imutils
+# Lấy vị trí mắt trái
 (lStart, lEnd) = face_utils.FACIAL_LANDMARKS_68_IDXS["left_eye"]
+
+# Lấy vị trí mắt phải
 (rStart, rEnd) = face_utils.FACIAL_LANDMARKS_68_IDXS["right_eye"]
 
-cap = cv2.VideoCapture(0)
+# Mở camera
+cap=cv2.VideoCapture(0)
+# 0 mặc định của laptop
+# 1 camera ngoài
 
 # ==========================================
-# CẤU HÌNH NGƯỠNG BUỒN NGỦ
+# KHỐI 4: CẤU HÌNH NGƯỠNG BUỒN NGỦ
 # ==========================================
+
+# Nếu EAR nhỏ hơn ngưỡng này → mắt nhắm
 EAR_THRESHOLD = 0.3
+
+# Số frame nhắm mắt liên tục để cảnh báo
 CLOSED_EYE_LIMIT = 50
+
+# Biến đếm số frame nhắm mắt
 closed_eye_counter = 0
 
+
 # ==========================================
-# KHỐI 4: VÒNG LẶP XỬ LÝ
+# KHỐI 5: VÒNG LẶP XỬ LÝ
 # ==========================================
+
 while True:
+
+    # Đọc frame từ camera
     ret, frame = cap.read()
+
+    # Nếu camera lỗi
     if not ret:
         break
 
+    # Chuyển frame sang ảnh xám
+    # Chuyển sang ảnh xám giúp model xử lí nhanh hơn
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # Tìm khuôn mặt
     faces = detector(gray, 0)
 
-    for face in faces:
-        shape = predictor(gray, face)
-        shape = face_utils.shape_to_np(shape)
-
-        leftEye = shape[lStart:lEnd]
-        rightEye = shape[rStart:rEnd]
-
-        ear = (eye_aspect_ratio(leftEye) + eye_aspect_ratio(rightEye)) / 2.0
+    # ======================================
+    # KHÔNG TÌM THẤY KHUÔN MẶT
+    # ======================================
+##Tìm coi có khuôn mặt hay không
+    if len(faces) == 0:
 
         cv2.putText(
             frame,
-            f"EAR: {ear:.2f}",
-            (10, 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (255, 255, 0),
-            2
+            "Khong tim thay khuon mat!",
+            (10, 100),
+            #Vị trí xuất hiện chữ.
+            # #10 = trục X
+            # #100 = trục Y
+            cv2.FONT_HERSHEY_SIMPLEX,#kiểu chữ xuất hiện
+            0.8,#kích thước
+            (0, 0, 255),#màu
+            2,#độ dày nét chữ
         )
 
+        # nếu không tìm thấy mặt thì reset bộ đếm
+        closed_eye_counter = 0
+
+        # tắt âm thanh
+        pygame.mixer.music.stop()
+
+    # ======================================
+    # NẾU TÌM THẤY KHUÔN MẶT
+    # ======================================
+#Nếu xuất hiện nhiều người thì xử lí từng người
+    for face in faces:
+
+        # Nhận diện landmark
+        #Tìm 68 điểm trên khuôn mặt
+        shape = predictor(gray, face)
+
+        # Đổi landmark sang numpy array
+        #slicing nhanh
+        #tính toán vector nhanh
+        #dùng được với scipy, opencv
+        #dễ tính khoảng cách EAR
+        shape = face_utils.shape_to_np(shape)
+
+        # Lấy landmark mắt trái
+        leftEye = shape[lStart:lEnd]
+
+        # Lấy landmark mắt phải
+        rightEye = shape[rStart:rEnd]
+
+        # Tính EAR mắt trái
+        leftEAR = eye_aspect_ratio(leftEye)
+
+        # Tính EAR mắt phải
+        rightEAR = eye_aspect_ratio(rightEye)
+
+        # EAR trung bình
+        ear = (leftEAR + rightEAR) / 2.0
+
+        # Hiển thị EAR
         cv2.putText(
             frame,
+            f"EAR: {ear:.2f}",#Hiển thị EAR với 2 số thập phân.
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,#kiểu chữ xuất hiện
+            0.7,#cỡ chữ
+            (255, 255, 0),#màu chữ
+            2#độ dày của chữ
+        )
+
+        # Hiển thị bộ đếm mắt nhắm
+        cv2.putText(
+            frame,
+            #closed_eye_counter Số frame mắt nhắm liên tục.
+            #CLOSED_EYE_LIMIT Ngưỡng cảnh báo.
             f"Dem mat nham: {closed_eye_counter}/{CLOSED_EYE_LIMIT}",
             (10, 60),
             cv2.FONT_HERSHEY_SIMPLEX,
@@ -91,34 +205,65 @@ while True:
             2
         )
 
-        # Nếu EAR nhỏ hơn 0.3 thì tính là mắt đang nhắm
+        # ==================================
+        # MẮT NHẮM
+        # ==================================
+
+        # Nếu EAR nhỏ hơn ngưỡng
         if ear < EAR_THRESHOLD:
+
+            # tăng bộ đếm
             closed_eye_counter += 1
 
-            # Nếu mắt nhắm liên tục đủ 50 lần thì báo động
+            # Nếu mắt nhắm quá lâu
             if closed_eye_counter >= CLOSED_EYE_LIMIT:
+
                 cv2.putText(
                     frame,
-                    "BUON NGU!",
-                    (10, 100),
+                    "CANH BAO BUON NGU!",
+                    (10, 140),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.9,
+                    1,
                     (0, 0, 255),
-                    2
+                    3
                 )
 
+                # Nếu chưa phát âm thanh thì phát
+                #Kiểm tra xem nhạc đang phát chưa.
                 if not pygame.mixer.music.get_busy():
                     pygame.mixer.music.play()
-
+                #Nếu chưa phát thì mới phát tránh trường hợp phát nhạc liên tục
+                #Kết quả có thể:
+                #âm thanh bị giật
+                #reset liên tục
+                #một số hệ thống nghe như chồng âm
+                #phát nhạc không mượt
+        # ==================================
+        # MẮT MỞ
+        # ==================================
+#Khi mở mắt thì reset bộ đếm về 0
         else:
-            # Nếu mắt mở lại thì reset bộ đếm và tắt báo động
+
+            # reset bộ đếm
             closed_eye_counter = 0
+
+            # tắt âm thanh
             pygame.mixer.music.stop()
 
+    # Hiển thị cửa sổ camera
     cv2.imshow("He Thong Canh Bao Buon Ngu", frame)
 
+    # Nhấn q để thoát
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
+
+# ==========================================
+# KHỐI 6: GIẢI PHÓNG BỘ NHỚ
+# ==========================================
+
 cap.release()
 cv2.destroyAllWindows()
+#nếu không giải phóng tắt camera đột ngột camera vẫn còn chạy ngầm không sài đc các
+#app sự dụng camera khác
+#tốn ram bộ nhứo tài nguyên
